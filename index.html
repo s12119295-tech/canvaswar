@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<title>Canvas War</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;700&display=swap" rel="stylesheet">
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+:root{--bg:#0b0b14;--card:#15152a;--ac:#7c5cff;--ac2:#00e5c3;--mut:#8a8fb5;--ln:#2a2a4a}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;height:100%;background:var(--bg);color:#eef;font:15px Vazirmatn,system-ui,-apple-system,"Segoe UI",Tahoma,sans-serif;overflow:hidden}
+#app{display:flex;flex-direction:column;height:100%}
+header{display:flex;align-items:center;justify-content:space-between;padding:10px 14px;padding-top:calc(10px + env(safe-area-inset-top))}
+h1{margin:0;font-size:19px;letter-spacing:.5px;background:linear-gradient(90deg,var(--ac),var(--ac2));-webkit-background-clip:text;background-clip:text;color:transparent}
+.r{display:flex;gap:8px}
+.pill{background:var(--card);border:1px solid var(--ln);border-radius:99px;padding:5px 12px;font-size:13px;color:#eef}
+button{font:inherit;color:inherit;cursor:pointer;border:0}
+#stage{flex:1;position:relative;min-height:0;touch-action:none}
+canvas{position:absolute;inset:0;width:100%;height:100%}
+#sheet{background:var(--card);border-radius:22px 22px 0 0;border-top:1px solid var(--ln);box-shadow:0 -10px 30px #0009;padding:14px 14px calc(14px + env(safe-area-inset-bottom))}
+.row{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px}
+#info{color:var(--mut);font-size:14px}
+.seg{display:flex;background:#0d0d1e;border-radius:12px;padding:3px}
+.seg button{background:none;padding:6px 12px;border-radius:9px;color:var(--mut);font-size:13px}
+.seg button.on{background:var(--ac);color:#fff}
+#pal{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px;align-items:center}
+.sw{width:30px;height:30px;border-radius:50%;border:2px solid #ffffff22}
+.sw.on{border-color:#fff;box-shadow:0 0 0 3px var(--ac)}
+input[type=color]{width:34px;height:34px;border:0;padding:0;background:none;border-radius:50%}
+#buy{width:100%;height:50px;border-radius:15px;font-size:16px;font-weight:700;color:#fff;background:linear-gradient(90deg,var(--ac),#c04bff);box-shadow:0 6px 20px #7c5cff55}
+#buy:disabled{opacity:.4;box-shadow:none}
+#toast{position:fixed;top:64px;left:50%;transform:translate(-50%,-20px);background:#000c;border:1px solid var(--ln);padding:9px 18px;border-radius:99px;opacity:0;transition:.3s;pointer-events:none}
+#toast.show{opacity:1;transform:translate(-50%,0)}
+</style></head><body>
+<div id="app">
+<header><h1>CANVAS WAR</h1><div class="r"><span class="pill" id="free">🎁 0</span><button class="pill" id="lg">🌐</button></div></header>
+<div id="stage"><canvas id="cv"></canvas></div>
+<div id="sheet">
+<div class="row"><span id="info"></span>
+<div class="seg"><button id="s1" class="on"></button><button id="s5"></button></div></div>
+<div id="pal"></div>
+<button id="buy" disabled></button>
+</div></div>
+<div id="toast"></div>
+<script>
+const tg=window.Telegram&&Telegram.WebApp;if(tg){tg.ready();tg.expand();}
+const N=100,MAXP=50,$=i=>document.getElementById(i);
+const B="https://fnqdwvygvyfbgkddehrq.supabase.co/functions/v1/canvas-war";
+const T={fa:{hint:"روی بوم یه پیکسل انتخاب کن",px:"پیکسل",bl:"بلوک ۵×۵",free:"رایگان بگیر 🎁",pay:p=>"پرداخت "+p+" ⭐",ok:"رنگ شد! 🎉",err:"خطا، دوباره امتحان کن",auth:"فقط داخل تلگرام کار می‌کنه",price:"قیمت"},
+en:{hint:"Tap a pixel on the canvas",px:"Pixel",bl:"5×5 block",free:"Claim free 🎁",pay:p=>"Pay "+p+" ⭐",ok:"Painted! 🎉",err:"Error, try again",auth:"Open inside Telegram",price:"Price"}};
+let lang;try{lang=localStorage.lang}catch(e){}
+lang=lang||(((tg&&tg.initDataUnsafe&&tg.initDataUnsafe.user&&tg.initDataUnsafe.user.language_code)||"fa").startsWith("fa")?"fa":"en");
+const init=(tg&&tg.initData)||"";
+const cv=$("cv"),cx=cv.getContext("2d"),off=document.createElement("canvas");off.width=off.height=N;
+const ox=off.getContext("2d"),img=ox.createImageData(N,N),cnt=new Uint16Array(N*N);
+for(let i=0;i<N*N*4;i++)img.data[i]=255;
+const PAL=["000000","ffffff","ff3b3b","ff9500","ffd60a","34c759","00e5c3","0a84ff","7c5cff","ff5fa2","8b5a2b","8e8e93","ffe28a","0b6e4f","87ceeb","ffa07a"];
+let color="ff3b3b",size=1,sel=null,free=0,busy=false,s=1,tx=0,ty=0,minS=1,W=0,H=0;
+PAL.forEach(c=>{const b=document.createElement("button");b.className="sw";b.style.background="#"+c;b.onclick=()=>{color=c;pal()};b.dataset.c=c;$("pal").appendChild(b)});
+const ci=document.createElement("input");ci.type="color";ci.value="#"+color;ci.oninput=()=>{color=ci.value.slice(1);pal()};$("pal").appendChild(ci);
+function pal(){[...document.querySelectorAll(".sw")].forEach(b=>b.classList.toggle("on",b.dataset.c==color));draw()}
+function toast(m){const t=$("toast");t.textContent=m;t.classList.add("show");setTimeout(()=>t.classList.remove("show"),2200)}
+function price(){let p=0;for(let j=0;j<size;j++)for(let i=0;i<size;i++)p+=Math.min(cnt[(sel.y+j)*N+sel.x+i]+1,MAXP);return p}
+function ui(){const L=T[lang];document.documentElement.dir=lang=="fa"?"rtl":"ltr";$("s1").textContent=L.px;$("s5").textContent=L.bl;
+$("s1").classList.toggle("on",size==1);$("s5").classList.toggle("on",size==5);$("free").textContent="🎁 "+free;$("lg").textContent=lang=="fa"?"EN":"فا";
+if(!sel){$("info").textContent=L.hint;$("buy").disabled=true;$("buy").textContent="—";return}
+const p=price();$("info").textContent="("+sel.x+", "+sel.y+") · "+L.price+": "+p+" ⭐";
+$("buy").disabled=busy;$("buy").textContent=(size==1&&p==1&&free>0)?L.free:L.pay(p)}
+$("lg").onclick=()=>{lang=lang=="fa"?"en":"fa";try{localStorage.lang=lang}catch(e){}ui()};
+$("s1").onclick=()=>{size=1;fix();ui();draw()};$("s5").onclick=()=>{size=5;fix();ui();draw()};
+function fix(){if(sel){sel.x=Math.min(sel.x,N-size);sel.y=Math.min(sel.y,N-size)}}
+function resize(){const r=$("stage").getBoundingClientRect(),d=devicePixelRatio||1;W=r.width;H=r.height;cv.width=W*d;cv.height=H*d;cx.setTransform(d,0,0,d,0,0);
+const f=Math.min(W,H)/N*.97;if(minS==1||s<f){s=f;tx=(W-N*s)/2;ty=(H-N*s)/2}minS=f*.9;draw()}
+function draw(){cx.fillStyle="#0b0b14";cx.fillRect(0,0,W,H);cx.imageSmoothingEnabled=false;cx.drawImage(off,tx,ty,N*s,N*s);
+if(s>=9){cx.strokeStyle="rgba(0,0,0,.14)";cx.lineWidth=1;cx.beginPath();for(let i=0;i<=N;i++){cx.moveTo(tx+i*s,ty);cx.lineTo(tx+i*s,ty+N*s);cx.moveTo(tx,ty+i*s);cx.lineTo(tx+N*s,ty+i*s)}cx.stroke()}
+cx.strokeStyle="#7c5cff55";cx.lineWidth=2;cx.strokeRect(tx,ty,N*s,N*s);
+if(sel){cx.fillStyle="#"+color+"cc";cx.fillRect(tx+sel.x*s,ty+sel.y*s,size*s,size*s);cx.strokeStyle="#fff";cx.lineWidth=2;cx.shadowColor="#7c5cff";cx.shadowBlur=12;cx.strokeRect(tx+sel.x*s,ty+sel.y*s,size*s,size*s);cx.shadowBlur=0}}
+function clamp(){tx=Math.min(Math.max(tx,W*.2-N*s),W*.8);ty=Math.min(Math.max(ty,H*.2-N*s),H*.8)}
+const ptr=new Map();let moved=0,pd=0;
+cv.onpointerdown=e=>{cv.setPointerCapture(e.pointerId);ptr.set(e.pointerId,[e.clientX,e.clientY]);moved=0;if(ptr.size==2){const[a,b]=[...ptr.values()];pd=Math.hypot(a[0]-b[0],a[1]-b[1])}};
+cv.onpointermove=e=>{const p=ptr.get(e.pointerId);if(!p)return;const dx=e.clientX-p[0],dy=e.clientY-p[1];moved+=Math.abs(dx)+Math.abs(dy);
+if(ptr.size==1){tx+=dx;ty+=dy}else if(ptr.size==2){ptr.set(e.pointerId,[e.clientX,e.clientY]);const n=[...ptr.values()],d=Math.hypot(n[0][0]-n[1][0],n[0][1]-n[1][1]);
+const r=cv.getBoundingClientRect();zoom(d/pd,(n[0][0]+n[1][0])/2-r.left,(n[0][1]+n[1][1])/2-r.top);pd=d;clamp();draw();return}
+p[0]=e.clientX;p[1]=e.clientY;clamp();draw()};
+cv.onpointerup=e=>{const was=ptr.size;ptr.delete(e.pointerId);if(was==1&&moved<8){const r=cv.getBoundingClientRect();pick(e.clientX-r.left,e.clientY-r.top)}};
+cv.onpointercancel=e=>ptr.delete(e.pointerId);
+cv.onwheel=e=>{e.preventDefault();const r=cv.getBoundingClientRect();zoom(e.deltaY<0?1.15:.87,e.clientX-r.left,e.clientY-r.top);clamp();draw()};
+function zoom(k,px,py){const n=Math.min(Math.max(s*k,minS),40);k=n/s;tx=px-(px-tx)*k;ty=py-(py-ty)*k;s=n}
+function pick(px,py){const x=Math.floor((px-tx)/s),y=Math.floor((py-ty)/s);if(x<0||y<0||x>=N||y>=N)return;
+sel={x:Math.min(x,N-size),y:Math.min(y,N-size)};ui();draw()}
+async function api(p,b){const r=await fetch(B+p,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(Object.assign({init:init},b))});if(!r.ok)throw r.status;return r.json()}
+async function load(){try{const t=await (await fetch(B+"/canvas")).text();for(const it of t?t.split(";"):[]){const q=it.split(","),i=+q[1]*N+ +q[0],c=q[2];
+img.data.set([parseInt(c.slice(0,2),16),parseInt(c.slice(2,4),16),parseInt(c.slice(4,6),16),255],i*4);cnt[i]=+q[3]}ox.putImageData(img,0,0);draw();ui()}catch(e){}}
+async function me(){try{free=(await api("/me",{})).free;ui()}catch(e){}}
+$("buy").onclick=async()=>{if(!sel||busy)return;busy=true;ui();const L=T[lang];
+try{const r=await api("/buy",{x:sel.x,y:sel.y,size:size,color:color});
+if(r.done){toast(L.ok);await me();await load()}
+else if(tg&&tg.openInvoice){tg.openInvoice(r.link,async st=>{if(st=="paid"){toast(L.ok);setTimeout(()=>{load();me()},1500)}})}}
+catch(e){toast(e==401?L.auth:L.err)}busy=false;ui()};
+addEventListener("resize",resize);resize();pal();ui();load();me();setInterval(()=>{if(!busy)load()},6000);
+</script></body></html>
